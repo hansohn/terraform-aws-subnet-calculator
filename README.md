@@ -62,6 +62,31 @@ module "vpc" {
 }
 ```
 
+### Availability zone alignment
+
+`availability_zones` and each `subnet_cidrs[<tier>]` list are **index-aligned**:
+entry `i` of a tier's CIDR list is the subnet computed for `availability_zones[i]`,
+and every tier shares the same AZ order (so `public[0]`, `private[0]`, … all land
+in the first AZ). VPC modules zip these by position — `terraform-aws-modules/vpc`
+assigns `element(var.azs, count.index)` alongside `var.public_subnets[count.index]`.
+
+Because of that, the rule is: **always pass this module's `availability_zones`
+output as the VPC module's `azs`.** Sourcing `azs` from anywhere else (e.g. a
+separate `slice(data.aws_availability_zones.available.names, ...)`) that is ordered
+or filtered differently will silently place subnets in the wrong zone — the CIDRs
+stay valid and non-overlapping, so nothing errors. Use the `subnet_azs[<tier>]`
+output to assert the pairing:
+
+```hcl
+output "public_pairs" {
+  value = zipmap(
+    module.subnet_calculator.subnet_azs["public"],
+    module.subnet_calculator.subnet_cidrs["public"],
+  )
+  # => { "us-west-2a" = "10.0.0.0/20", "us-west-2b" = "10.0.16.0/20", ... }
+}
+```
+
 ### Unequal tier sizing
 
 By default every subnet is equal-sized. To make tiers differ, set `tier_newbits` —
