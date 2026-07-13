@@ -44,6 +44,21 @@ locals {
     ]
   }
 
+  # Unequal tiers: carve one variable-sized block per tier (level 1), then split
+  # each tier block evenly across AZs (level 2). Powers of two only, so blocks may
+  # leave alignment gaps between tiers — that is expected, not overlap.
+  use_tier_sizing = var.enable_dynamic_subnets && length(var.tier_newbits) > 0
+  tier_blocks     = local.use_tier_sizing ? cidrsubnets(var.cidr_block, [for t in var.tiers : var.tier_newbits[t]]...) : []
+  az_newbits      = local.az_count > 0 ? ceil(log(local.az_count, 2)) : 0
+  sized_subnets = local.use_tier_sizing ? {
+    for ti, tier in var.tiers : tier => [
+      for ai, az in local.discovered_azs : {
+        availability_zone = az
+        cidr_block        = cidrsubnet(local.tier_blocks[ti], local.az_newbits, ai)
+      }
+    ]
+  } : {}
+
   # Static: flatten { tier => { az => [cidrs] } } into per-tier ordered lists.
   static_subnets = {
     for tier in var.tiers : tier => flatten([
@@ -56,5 +71,7 @@ locals {
     ])
   }
 
-  subnets = var.enable_dynamic_subnets ? local.dynamic_subnets : local.static_subnets
+  subnets = !var.enable_dynamic_subnets ? local.static_subnets : (
+    local.use_tier_sizing ? local.sized_subnets : local.dynamic_subnets
+  )
 }

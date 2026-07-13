@@ -63,6 +63,28 @@ variable "newbits_override" {
   default     = null
 }
 
+variable "tier_newbits" {
+  description = <<-EOT
+    Optional per-tier mask growth for unequal tier sizing. Map of tier name => newbits
+    (bits added to the VPC prefix for that tier's block; larger = smaller tier). Empty
+    means all tiers are equal-sized (default behavior). When set, an entry is required
+    for every tier in `tiers`. Sizes are powers of two, so express relative sizes as
+    ratios, e.g. { public = 3, private = 2, internal = 2 } => 1:2:2.
+  EOT
+  type        = map(number)
+  default     = {}
+
+  validation {
+    condition     = length(var.tier_newbits) == 0 || alltrue([for t in var.tiers : contains(keys(var.tier_newbits), t)])
+    error_message = "When tier_newbits is set, it must include an entry for every tier in var.tiers."
+  }
+
+  validation {
+    condition     = alltrue([for n in values(var.tier_newbits) : n >= 1])
+    error_message = "tier_newbits values must all be >= 1."
+  }
+}
+
 ################################################################################
 # Static Mode
 ################################################################################
