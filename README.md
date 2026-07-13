@@ -62,20 +62,42 @@ module "vpc" {
 }
 ```
 
-To supply CIDRs yourself (e.g. unequal tier sizes), set `enable_dynamic_subnets = false`
-and pass `static_subnet_cidrs`.
+### Unequal tier sizing
+
+By default every subnet is equal-sized. To make tiers differ, set `tier_newbits` —
+a per-tier mask growth (bigger = smaller tier). Sizes are powers of two, so you
+express **relative ratios**, not arbitrary percentages:
+
+```hcl
+module "subnet_calculator" {
+  source = "hansohn/subnet-calculator/aws"
+
+  cidr_block   = "10.0.0.0/16"
+  tiers        = ["public", "private", "internal"]
+  tier_newbits = { public = 3, private = 2, internal = 2 } # ratio 1:2:2
+
+  # public   = ["10.0.0.0/21", "10.0.8.0/21",  "10.0.16.0/21"]   (half size)
+  # private  = ["10.0.64.0/20","10.0.80.0/20",  "10.0.96.0/20"]
+  # internal = ["10.0.128.0/20","10.0.144.0/20","10.0.160.0/20"]
+}
+```
+
+For fully manual control, set `enable_dynamic_subnets = false` and pass
+`static_subnet_cidrs`.
 
 > [!WARNING]
-> Subnets are **equal-sized**, and the mask is derived from `tiers * azs`. Adding
-> an AZ or a tier changes `newbits`, which re-CIDRs every subnet and forces
-> recreation. Treat the tier list and AZ count as immutable for a live VPC, or
-> pin CIDRs via static mode.
+> The mask is derived from `tiers * azs` (or `tier_newbits`). Adding an AZ or a
+> tier changes the layout, which re-CIDRs every subnet and forces recreation.
+> Treat the tier list and AZ count as immutable for a live VPC, or pin CIDRs via
+> static mode. Power-of-two sizing means unequal splits may leave alignment gaps
+> between tiers (expected, not overlap).
 
 ## :sparkles: Examples
 
 Please see the sample set of examples below for a better understanding of implementation
 
 - [Complete](examples/complete) - Standalone calculator usage
+- [Unequal Tiers](examples/unequal-tiers) - Per-tier sizing with `tier_newbits`
 - [VPC](examples/vpc) - Wiring the calculator into `terraform-aws-modules/vpc`
 
 <!-- BEGIN_TF_DOCS -->
@@ -91,6 +113,7 @@ Please see the sample set of examples below for a better understanding of implem
 | <a name="input_max_availability_zones"></a> [max\_availability\_zones](#input\_max\_availability\_zones) | Cap on the number of auto-discovered AZs. Ignored when `availability_zones` is set. | `number` | `3` | no |
 | <a name="input_newbits_override"></a> [newbits\_override](#input\_newbits\_override) | Override the auto-computed subnet mask growth (newbits). null = auto: ceil(log2(tiers * azs)). | `number` | `null` | no |
 | <a name="input_static_subnet_cidrs"></a> [static\_subnet\_cidrs](#input\_static\_subnet\_cidrs) | Explicit CIDRs used when `enable_dynamic_subnets = false`.<br/>Shape: tier name => AZ name => list of CIDR strings.<br/>Example: { public = { "us-west-2a" = ["10.0.0.0/24"] } } | `map(map(list(string)))` | `{}` | no |
+| <a name="input_tier_newbits"></a> [tier\_newbits](#input\_tier\_newbits) | Optional per-tier mask growth for unequal tier sizing. Map of tier name => newbits<br/>(bits added to the VPC prefix for that tier's block; larger = smaller tier). Empty<br/>means all tiers are equal-sized (default behavior). When set, an entry is required<br/>for every tier in `tiers`. Sizes are powers of two, so express relative sizes as<br/>ratios, e.g. { public = 3, private = 2, internal = 2 } => 1:2:2. | `map(number)` | `{}` | no |
 | <a name="input_tiers"></a> [tiers](#input\_tiers) | Ordered list of subnet tier names to carve. Order determines CIDR allocation:<br/>tier 0 occupies the first `az_count` blocks, tier 1 the next, and so on. Adding,<br/>removing, or reordering tiers changes every downstream CIDR, so treat this as<br/>immutable for a live VPC. | `list(string)` | <pre>[<br/>  "public",<br/>  "protected",<br/>  "private"<br/>]</pre> | no |
 
 ## Outputs
